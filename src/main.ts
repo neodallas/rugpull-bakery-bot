@@ -11,6 +11,7 @@ import { createStateReader, assertChainId } from "./state-reader.js";
 import { createSessionSigner } from "./session-key.js";
 import { createExecutor, isInvalidSessionError } from "./executor.js";
 import { createTelegramNotifier } from "./telegram-notifier.js";
+import { recordSweeperCleanup } from "./sweeper-cooldown.js";
 
 const DATA_DIR = "data";
 const KILL_FLAG_PATH = join(DATA_DIR, "kill.flag");
@@ -75,8 +76,8 @@ async function main(): Promise<void> {
 
   await assertChainId(reader.publicClient);
   const agent = await getAgentJson();
-  if (agent.chainId !== 2741) {
-    throw new Error(`/agent.json chainId mismatch: ${agent.chainId}`);
+  if (agent.network.chainId !== 2741) {
+    throw new Error(`/agent.json chainId mismatch: ${agent.network.chainId}`);
   }
 
   const executor = createExecutor({
@@ -85,7 +86,7 @@ async function main(): Promise<void> {
     signer,
     agentContracts: {
       boostManager: agent.contracts.boostManager,
-      playerRegistry: agent.contracts.playerRegistry,
+      bakery: agent.contracts.bakery,
     },
     log,
   });
@@ -156,6 +157,7 @@ async function main(): Promise<void> {
         await tg.send(`Unexpected tx failure: ${result.reason}`);
       }
       if (result.ok && action.kind === "cleanup") {
+        recordSweeperCleanup(DATA_DIR, Math.floor(Date.now() / 1000));
         await tg.send(`Sweeper cleanup sent: ${result.txHash}`);
       }
 

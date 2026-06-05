@@ -38,16 +38,9 @@ export const BOOST_MANAGER_READ_ABI = [
       },
     ],
   },
-  {
-    type: "function",
-    name: "getVrfFee",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ name: "wei", type: "uint256" }],
-  },
 ] as const;
 
-export const PLAYER_REGISTRY_READ_ABI = [
+export const BAKERY_READ_ABI = [
   {
     type: "function",
     name: "lastBakeBlock",
@@ -57,34 +50,13 @@ export const PLAYER_REGISTRY_READ_ABI = [
   },
 ] as const;
 
-export const PLAYER_SKILLS_READ_ABI = [
+export const BAKERY_WRITE_ABI = [
+  ...BAKERY_READ_ABI,
   {
     type: "function",
-    name: "getPlayerSkill",
-    stateMutability: "view",
-    inputs: [
-      { name: "player", type: "address" },
-      { name: "seasonId", type: "uint256" },
-    ],
-    outputs: [{ name: "skillId", type: "uint8" }],
+    name: "bake",
+    stateMutability: "nonpayable",
+    inputs: [],
+    outputs: [],
   },
-  {
-    type: "function",
-    name: "getSweeperFreeReadyAt",
-    stateMutability: "view",
-    inputs: [{ name: "player", type: "address" }],
-    outputs: [{ name: "unix", type: "uint256" }],
-  },
-] as const;
-
-export const SKILL_ID_TO_NAME = [
-  "None",
-  "Lucky",
-  "Evil",
-  "Booster",
-  "Saboteur",
-  "Sweeper",
-  "Perfectionist",
-  "Trailblazer",
-  "Guardian",
 ] as const;

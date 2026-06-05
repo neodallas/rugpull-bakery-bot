@@ -1,18 +1,34 @@
+export type BoostCatalogEntry = {
+  id: string;
+  name: string;
+  type: string;
+  isRandomEvent: boolean;
+  isCountermeasure: boolean;
+};
+
+export type BakeryTier = {
+  tierId: number;
+  name: string;
+  enabled: boolean;
+  bakeCooldownBlocks: number;
+};
+
 export type AgentJson = {
-  chainId: number;
-  seasonId: number;
+  network: { chainId: number };
   contracts: {
+    bakery: `0x${string}`;
     boostManager: `0x${string}`;
     playerRegistry: `0x${string}`;
-    playerSkills: `0x${string}`;
     clanRegistry: `0x${string}`;
   };
-  boostCatalog: Array<{
-    typeId: number;
-    name: string;
-    isRandomEvent: boolean;
-    isCountermeasure: boolean;
-  }>;
+  liveState: {
+    currentSeasonId: number;
+    vrfFeeWei: string;
+    gameplayCaps: {
+      bakeryTiers: BakeryTier[];
+    };
+    activeBoostCatalog: BoostCatalogEntry[];
+  };
 };
 
 const TTL_MS = 5 * 60 * 1000;

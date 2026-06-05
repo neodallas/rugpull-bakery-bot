@@ -1,19 +1,8 @@
 import type { PublicClient } from "viem";
-import { BOOST_MANAGER_READ_ABI, PLAYER_REGISTRY_READ_ABI } from "./abis.js";
+import { BOOST_MANAGER_READ_ABI, BAKERY_WRITE_ABI } from "./abis.js";
 import type { Logger } from "./logger.js";
 import type { SessionSigner } from "./session-key.js";
 import type { Action, Config, Hex, TxResult } from "./types.js";
-
-const PLAYER_REGISTRY_WRITE_ABI = [
-  ...PLAYER_REGISTRY_READ_ABI,
-  {
-    type: "function",
-    name: "bake",
-    stateMutability: "nonpayable",
-    inputs: [],
-    outputs: [],
-  },
-] as const;
 
 const BOOST_MANAGER_WRITE_ABI = [
   ...BOOST_MANAGER_READ_ABI,
@@ -69,7 +58,7 @@ export function createExecutor(opts: {
   cfg: Config;
   publicClient: PublicClient;
   signer: SessionSigner;
-  agentContracts: { boostManager: Hex; playerRegistry: Hex };
+  agentContracts: { boostManager: Hex; bakery: Hex };
   log: Logger;
 }): Executor {
   const { cfg, publicClient, signer, agentContracts, log } = opts;
@@ -128,8 +117,8 @@ export function createExecutor(opts: {
       }
       if (action.kind === "bake") {
         const sim = await simulateOrAbort(
-          agentContracts.playerRegistry,
-          PLAYER_REGISTRY_WRITE_ABI,
+          agentContracts.bakery,
+          BAKERY_WRITE_ABI,
           "bake",
           [],
           0n
@@ -143,8 +132,8 @@ export function createExecutor(opts: {
           (signer as unknown as {
             writeContract: (a: unknown) => Promise<Hex>;
           }).writeContract({
-            address: agentContracts.playerRegistry,
-            abi: PLAYER_REGISTRY_WRITE_ABI,
+            address: agentContracts.bakery,
+            abi: BAKERY_WRITE_ABI,
             functionName: "bake",
             args: [],
           }),

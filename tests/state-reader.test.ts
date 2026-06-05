@@ -7,18 +7,27 @@ afterEach(() => {
 });
 
 const sampleAgentJson = {
-  chainId: 2741,
-  seasonId: 10,
+  network: { chainId: 2741 },
   contracts: {
-    boostManager: "0xaaaa000000000000000000000000000000000000",
-    playerRegistry: "0xbbbb000000000000000000000000000000000000",
-    playerSkills: "0xcccc000000000000000000000000000000000000",
+    bakery: "0xaaaa000000000000000000000000000000000000",
+    boostManager: "0xbbbb000000000000000000000000000000000000",
+    playerRegistry: "0xcccc000000000000000000000000000000000000",
     clanRegistry: "0xdddd000000000000000000000000000000000000",
   },
-  boostCatalog: [
-    { typeId: 7, name: "Cleanup Crew", isRandomEvent: false, isCountermeasure: true },
-    { typeId: 11, name: "Stink Bomb", isRandomEvent: false, isCountermeasure: false },
-  ],
+  liveState: {
+    currentSeasonId: 10,
+    vrfFeeWei: "24006155000000",
+    gameplayCaps: {
+      bakeryTiers: [
+        { tierId: 1, name: "Grouped", enabled: true, bakeCooldownBlocks: 5 },
+        { tierId: 2, name: "Open", enabled: true, bakeCooldownBlocks: 1 },
+      ],
+    },
+    activeBoostCatalog: [
+      { id: "9", name: "Cleanup Crew", type: "boost", isRandomEvent: false, isCountermeasure: true },
+      { id: "11", name: "Stink Bomb", type: "boost", isRandomEvent: false, isCountermeasure: false },
+    ],
+  },
 };
 
 describe("getAgentJson", () => {
@@ -58,7 +67,7 @@ describe("getAgentJson", () => {
       throw new Error("net down");
     });
     const result = await getAgentJson(failFetcher);
-    expect(result.chainId).toBe(2741);
+    expect(result.network.chainId).toBe(2741);
   });
 
   it("throws when no cache and network fails", async () => {
@@ -70,16 +79,16 @@ describe("getAgentJson", () => {
 });
 
 describe("findCleanupCrewBoostTypeId", () => {
-  it("returns matching typeId by name", async () => {
+  it("returns numeric id parsed from string id for matching entry", async () => {
     const { findCleanupCrewBoostTypeId } = await import("../src/state-reader.js");
-    expect(findCleanupCrewBoostTypeId(sampleAgentJson.boostCatalog)).toBe(7);
+    expect(findCleanupCrewBoostTypeId(sampleAgentJson.liveState.activeBoostCatalog)).toBe(9);
   });
 
   it("returns null when not in catalog", async () => {
     const { findCleanupCrewBoostTypeId } = await import("../src/state-reader.js");
     expect(
       findCleanupCrewBoostTypeId([
-        { typeId: 1, name: "Other", isRandomEvent: false, isCountermeasure: false },
+        { id: "1", name: "Other", type: "boost", isRandomEvent: false, isCountermeasure: false },
       ])
     ).toBeNull();
   });
