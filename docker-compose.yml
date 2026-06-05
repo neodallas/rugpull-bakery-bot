@@ -1,0 +1,11 @@
+services:
+  bot:
+    build: .
+    container_name: rugpull-bakery-bot
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+      - ./config.json:/app/config.json:ro
+    init: true
+    stop_grace_period: 10s
