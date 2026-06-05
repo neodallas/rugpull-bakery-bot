@@ -71,9 +71,9 @@ export function createExecutor(opts: {
       const receipt = await publicClient.waitForTransactionReceipt({ hash, confirmations: 1 });
       const gasUsedWei = receipt.gasUsed * (receipt.effectiveGasPrice ?? 0n);
       if (receipt.status !== "success") {
-        const { expected, reason } = classifyRevert(`${description} reverted on-chain`);
+        const reason = `${description} reverted on-chain (post-simulation race)`;
         log.warn("tx reverted", { description, txHash: hash, reason });
-        return { ok: false, reason, expected };
+        return { ok: false, reason, expected: false };
       }
       log.info("tx ok", { description, txHash: hash, gasUsedWei, vrfPaidWei });
       return { ok: true, txHash: hash, gasUsedWei, vrfPaidWei };
