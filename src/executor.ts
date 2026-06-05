@@ -37,6 +37,19 @@ const EXPECTED_REVERT_HINTS = [
   "ApprovalRequired",
 ];
 
+const INVALID_SESSION_HINTS = [
+  "Session expired",
+  "Session revoked",
+  "Unauthorized",
+  "InvalidSignature",
+  "SessionKeyValidator",
+];
+
+export function isInvalidSessionError(message: string): boolean {
+  const m = message.toLowerCase();
+  return INVALID_SESSION_HINTS.some((h) => m.includes(h.toLowerCase()));
+}
+
 function classifyRevert(message: string): { expected: boolean; reason: string } {
   const reason = message.slice(0, 200);
   for (const hint of EXPECTED_REVERT_HINTS) {

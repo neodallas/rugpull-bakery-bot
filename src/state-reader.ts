@@ -48,6 +48,7 @@ export function createStateReader(cfg: Config): StateReader {
         blockNumber,
         multiplier,
         rawRugs,
+        rawBoosts,
         vrfFeeWei,
         lastBakeBlockRaw,
         skillIdRaw,
@@ -65,6 +66,12 @@ export function createStateReader(cfg: Config): StateReader {
           address: agent.contracts.boostManager,
           abi: BOOST_MANAGER_READ_ABI,
           functionName: "getActiveDebuffs",
+          args: [BigInt(cfg.clanId)],
+        }),
+        publicClient.readContract({
+          address: agent.contracts.boostManager,
+          abi: BOOST_MANAGER_READ_ABI,
+          functionName: "getActiveBoosts",
           args: [BigInt(cfg.clanId)],
         }),
         publicClient.readContract({
@@ -103,6 +110,16 @@ export function createStateReader(cfg: Config): StateReader {
         severityBps: Number(r.severityBps),
       }));
 
+      const activeBoosts: Debuff[] = (rawBoosts as Array<{
+        boostTypeId: bigint;
+        endTimeUnix: bigint;
+        severityBps: bigint;
+      }>).map((b) => ({
+        boostTypeId: Number(b.boostTypeId),
+        endTimeUnix: Number(b.endTimeUnix),
+        severityBps: Number(b.severityBps),
+      }));
+
       const playerSkill: SkillId =
         SKILL_ID_TO_NAME[Number(skillIdRaw)] ?? "None";
       const sweeperFreeReady =
@@ -115,6 +132,7 @@ export function createStateReader(cfg: Config): StateReader {
         lastBakeBlock: lastBakeBlockRaw as bigint,
         effectiveMultiplierBps: Number(multiplier),
         activeRugs,
+        activeBoosts,
         playerSkill,
         sweeperFreeReady,
         bakeCooldownBlocks: cfg.bakeCooldownBlocks,

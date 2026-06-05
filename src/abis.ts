@@ -24,6 +24,22 @@ export const BOOST_MANAGER_READ_ABI = [
   },
   {
     type: "function",
+    name: "getActiveBoosts",
+    stateMutability: "view",
+    inputs: [{ name: "clanId", type: "uint256" }],
+    outputs: [
+      {
+        type: "tuple[]",
+        components: [
+          { name: "boostTypeId", type: "uint256" },
+          { name: "endTimeUnix", type: "uint256" },
+          { name: "severityBps", type: "uint256" },
+        ],
+      },
+    ],
+  },
+  {
+    type: "function",
     name: "getVrfFee",
     stateMutability: "view",
     inputs: [],

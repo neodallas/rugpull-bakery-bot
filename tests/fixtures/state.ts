@@ -7,6 +7,7 @@ export function makeState(overrides: Partial<State> = {}): State {
     lastBakeBlock: 900n,
     effectiveMultiplierBps: 10000,
     activeRugs: [],
+    activeBoosts: [],
     playerSkill: "Sweeper",
     sweeperFreeReady: true,
     bakeCooldownBlocks: 5,

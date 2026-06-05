@@ -24,6 +24,7 @@ export type State = {
   lastBakeBlock: bigint;
   effectiveMultiplierBps: number;
   activeRugs: Debuff[];
+  activeBoosts: Debuff[];
   playerSkill: SkillId;
   sweeperFreeReady: boolean;
   bakeCooldownBlocks: number;

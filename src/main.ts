@@ -9,13 +9,53 @@ import { createSafetyCaps } from "./safety-caps.js";
 import { decide } from "./decision-engine.js";
 import { createStateReader, assertChainId } from "./state-reader.js";
 import { createSessionSigner } from "./session-key.js";
-import { createExecutor } from "./executor.js";
+import { createExecutor, isInvalidSessionError } from "./executor.js";
 import { createTelegramNotifier } from "./telegram-notifier.js";
 
 const DATA_DIR = "data";
 const KILL_FLAG_PATH = join(DATA_DIR, "kill.flag");
 const SAFETY_PATH = join(DATA_DIR, "safety.json");
 const LOG_PATH = join(DATA_DIR, "events.jsonl");
+
+// Gap 2 — session expiry warning
+const THREE_DAYS_S = 3 * 24 * 60 * 60;
+let lastExpiryWarnDate = "";
+async function maybeWarnExpiry(
+  sessionConfig: { expiresAt: bigint },
+  tg: { send: (t: string) => Promise<void> },
+  log: { warn: (m: string, f?: Record<string, unknown>) => void },
+): Promise<void> {
+  const now = Math.floor(Date.now() / 1000);
+  const expires = Number(sessionConfig.expiresAt);
+  if (expires - now > THREE_DAYS_S) return;
+  const today = new Date().toISOString().slice(0, 10);
+  if (lastExpiryWarnDate === today) return;
+  lastExpiryWarnDate = today;
+  const hoursLeft = Math.max(0, Math.floor((expires - now) / 3600));
+  log.warn("session key expiry approaching", { hoursLeft });
+  await tg.send(`Session key expires in ~${hoursLeft}h — rotate soon`);
+}
+
+// Gap 3 — daily UTC summary
+let lastSeenDate = new Date().toISOString().slice(0, 10);
+let summarySnapshot: ReturnType<typeof createSafetyCaps>["snapshot"] extends () => infer R ? R : never = {} as never;
+async function maybeEmitDailySummary(
+  safety: ReturnType<typeof createSafetyCaps>,
+  tg: { send: (t: string) => Promise<void> },
+): Promise<void> {
+  const today = new Date().toISOString().slice(0, 10);
+  if (today === lastSeenDate) {
+    summarySnapshot = safety.snapshot();
+    return;
+  }
+  const prev = summarySnapshot;
+  lastSeenDate = today;
+  summarySnapshot = safety.snapshot();
+  if (!prev || prev.bakeCountToday === undefined) return;
+  await tg.send(
+    `Daily summary ${prev.dateUtc}: ${prev.bakeCountToday} bakes, gas ${prev.gasSpentWei} wei, vrf ${prev.vrfSpentWei} wei`,
+  );
+}
 
 async function main(): Promise<void> {
   if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
@@ -69,11 +109,19 @@ async function main(): Promise<void> {
         continue;
       }
 
+      await maybeWarnExpiry(sessionConfig, tg, log);
+      await maybeEmitDailySummary(safety, tg);
+
       const state = await reader.read();
       const action = decide(state, cfg);
 
       if (action.kind === "sleep") {
-        log.info("sleep", { reason: action.reason, multiplierBps: state.effectiveMultiplierBps });
+        log.info("sleep", {
+          reason: action.reason,
+          multiplierBps: state.effectiveMultiplierBps,
+          activeRugsCount: state.activeRugs.length,
+          activeBoostsCount: state.activeBoosts.length,
+        });
         if (action.reason === "low ETH") {
           await tg.send(`ETH balance low: ${state.ethWei} wei`);
         }
@@ -97,6 +145,12 @@ async function main(): Promise<void> {
         vrfFeeWei: state.vrfFeeWei,
       });
       safety.recordTxResult(result);
+
+      if (!result.ok && isInvalidSessionError(result.reason)) {
+        safety.trip("invalid session key detected");
+        await tg.send(`CRITICAL: session key appears invalid (${result.reason}). Bot stopped.`);
+        log.error("invalid session key", { reason: result.reason });
+      }
 
       if (!result.ok && !result.expected) {
         await tg.send(`Unexpected tx failure: ${result.reason}`);
