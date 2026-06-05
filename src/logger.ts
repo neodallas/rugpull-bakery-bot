@@ -23,7 +23,13 @@ function redact(obj: Record<string, unknown>): Record<string, unknown> {
   for (const [k, v] of Object.entries(obj)) {
     if (REDACT_KEYS.has(k)) {
       out[k] = "[REDACTED]";
-    } else if (v && typeof v === "object" && !Array.isArray(v)) {
+    } else if (Array.isArray(v)) {
+      out[k] = v.map((item) =>
+        item && typeof item === "object" && !Array.isArray(item)
+          ? redact(item as Record<string, unknown>)
+          : item
+      );
+    } else if (v && typeof v === "object") {
       out[k] = redact(v as Record<string, unknown>);
     } else {
       out[k] = v;

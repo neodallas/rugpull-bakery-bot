@@ -44,6 +44,14 @@ describe("logger", () => {
     expect(parsed.addr).toBe("0xabc");
   });
 
+  it("redacts secrets nested inside arrays", () => {
+    const log = createLogger(join(dir, "events.jsonl"));
+    log.info("x", { secrets: [{ privateKey: "bad" }, { token: "tg" }] });
+    const parsed = JSON.parse(readFileSync(join(dir, "events.jsonl"), "utf8"));
+    expect(parsed.secrets[0].privateKey).toBe("[REDACTED]");
+    expect(parsed.secrets[1].token).toBe("[REDACTED]");
+  });
+
   it("serializes bigint as string", () => {
     const log = createLogger(join(dir, "events.jsonl"));
     log.info("x", { wei: 12345678901234567890n });
