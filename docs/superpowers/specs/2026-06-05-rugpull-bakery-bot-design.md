@@ -217,6 +217,65 @@ covered by unit tests in `tests/decision-engine.test.ts`.
 Loss of file = safe defaults (0 spent, kill switch off). Date-rollover detection
 on read.
 
+## Security
+
+### Key model
+
+- Bot signs **only** with the AGW session key. The AGW owner key never enters
+  the bot, never lives on the VPS, and is never asked for at runtime.
+- Session key authority is scoped at the AGW level to a whitelist of methods
+  (`bake`, `purchaseBoost`). Even if the session key private key leaks, the
+  attacker cannot drain ETH from the AGW, transfer NFTs, register new clans,
+  or call `launchAttack`.
+- Session key has a finite TTL (default 30 days). Bot warns via Telegram
+  3 days before expiry.
+
+### Chain-ID validation
+
+On boot, before any tx is constructed, the bot calls `eth_chainId` and asserts
+the response equals `2741` (Abstract mainnet). Mismatch → hard exit with
+critical TG alert. Prevents accidental or malicious RPC substitution.
+
+### Logging redaction
+
+The following must **never** appear in `events.jsonl`, stdout, or Telegram:
+
+- session key private key
+- raw signatures
+- Telegram bot token
+- `.env` file contents
+
+Public on-chain data (player address, clan id, multipliers, tx hashes) may be
+logged.
+
+### Telegram rate limiting
+
+`telegram-notifier` deduplicates identical alerts within a 1-hour window and
+caps total outbound at **20 messages/hour**. Excess alerts are dropped with a
+single summary message at the hour boundary. Prevents alert-spam → 429 →
+silent bot.
+
+### Source-of-truth ordering
+
+For money-sensitive values (VRF fee, boost cost, registration buy-in) the bot
+**always** prefers a fresh contract read over the cached `/agent.json`. This
+matches the rugpullbakery.com `skill.md` guidance and prevents a compromised
+or stale `/agent.json` from causing the bot to overspend.
+
+### Session key revocation procedure
+
+If `.env` is suspected leaked or VPS compromise is possible:
+
+1. From any browser, open rugpullbakery.com and connect the AGW owner wallet.
+2. In the wallet's session key management UI, revoke the session key whose
+   public address matches `AGW_OWNER_ADDRESS` config.
+3. On the VPS: `docker compose down`, rotate `SESSION_KEY_PRIVATE_KEY`,
+   generate a new session key from the AGW UI, redeploy.
+
+Revocation is on-chain and immediate; no bot-side action is required to
+honour it (the next tx attempt will revert with an unexpected error and trip
+the kill switch).
+
 ## Error Handling
 
 | Class | Examples | Reaction |
@@ -357,6 +416,12 @@ Modules not unit-tested (intentional): `executor` (thin viem wrapper),
 7. **Maintenance**
    - Renew session key every 30 days (TG warns 3 days before expiry)
    - Review `events.jsonl` weekly for ROI
+
+8. **Emergency revocation** (only if `.env` leaked or VPS compromised)
+   - Open rugpullbakery.com with the AGW owner wallet
+   - Revoke the session key associated with `AGW_OWNER_ADDRESS`
+   - Stop the bot (`docker compose down`)
+   - Rotate `SESSION_KEY_PRIVATE_KEY`, generate fresh session key, redeploy
 
 ## Open Items
 
