@@ -43,10 +43,10 @@ export const BOOST_MANAGER_READ_ABI = [
 export const BAKERY_READ_ABI = [
   {
     type: "function",
-    name: "lastBakeBlock",
+    name: "lastBake",
     stateMutability: "view",
     inputs: [{ name: "player", type: "address" }],
-    outputs: [{ name: "block", type: "uint256" }],
+    outputs: [{ name: "value", type: "uint256" }],
   },
 ] as const;
 

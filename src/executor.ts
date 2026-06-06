@@ -20,6 +20,7 @@ const BOOST_MANAGER_WRITE_ABI = [
 
 const EXPECTED_REVERT_HINTS = [
   "BakeTooSoon",
+  "WhoaSlowDown",
   "BoostCooldown",
   "InsufficientCookies",
   "RugProtection",

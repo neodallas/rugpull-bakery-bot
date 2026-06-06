@@ -71,7 +71,7 @@ export function createStateReader(cfg: Config): StateReader {
         publicClient.readContract({
           address: agent.contracts.bakery,
           abi: BAKERY_READ_ABI,
-          functionName: "lastBakeBlock",
+          functionName: "lastBake",
           args: [cfg.agwOwnerAddress],
         }),
       ]);
