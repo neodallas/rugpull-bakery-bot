@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseConfig } from "../src/config.js";
+import { parseConfig, isDryRun } from "../src/config.js";
 
 const validRaw = {
   clanId: 42,
@@ -55,5 +55,19 @@ describe("parseConfig", () => {
     expect(() =>
       parseConfig(validRaw, { ...validEnv, AGW_OWNER_ADDRESS: "not-an-address" })
     ).toThrow(/AGW_OWNER_ADDRESS/);
+  });
+});
+
+describe("isDryRun", () => {
+  it("returns true when --dry-run is in argv", () => {
+    expect(isDryRun(["node", "main.js", "--dry-run"], {})).toBe(true);
+  });
+
+  it("returns true when DRY_RUN=1 is in env", () => {
+    expect(isDryRun([], { DRY_RUN: "1" })).toBe(true);
+  });
+
+  it("returns false when neither is set", () => {
+    expect(isDryRun([], {})).toBe(false);
   });
 });

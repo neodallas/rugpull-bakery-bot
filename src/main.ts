@@ -2,7 +2,7 @@ import "dotenv/config";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { loadConfigFromDisk } from "./config.js";
+import { loadConfigFromDisk, isDryRun } from "./config.js";
 import { getAgentJson } from "./agent-json.js";
 import { createLogger } from "./logger.js";
 import { createSafetyCaps } from "./safety-caps.js";
@@ -62,17 +62,12 @@ async function main(): Promise<void> {
   if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
   const log = createLogger(LOG_PATH);
   const cfg = loadConfigFromDisk();
-
-  const sessionPath = process.env.SESSION_CONFIG_PATH ?? "data/session.json";
-  if (!existsSync(sessionPath)) {
-    throw new Error(`SessionConfig file missing at ${sessionPath} — complete onboarding first.`);
-  }
-  const sessionConfig = JSON.parse(readFileSync(sessionPath, "utf8")) as Parameters<typeof createSessionSigner>[1];
+  const dryRun = isDryRun();
+  log.info("startup mode", { dryRun });
 
   const safety = createSafetyCaps(SAFETY_PATH, cfg);
   const tg = createTelegramNotifier(cfg.telegram);
   const reader = createStateReader(cfg);
-  const signer = createSessionSigner(cfg, sessionConfig);
 
   await assertChainId(reader.publicClient);
   const agent = await getAgentJson();
@@ -80,19 +75,33 @@ async function main(): Promise<void> {
     throw new Error(`/agent.json chainId mismatch: ${agent.network.chainId}`);
   }
 
-  const executor = createExecutor({
-    cfg,
-    publicClient: reader.publicClient,
-    signer,
-    agentContracts: {
-      boostManager: agent.contracts.boostManager,
-      bakery: agent.contracts.bakery,
-    },
-    log,
-  });
+  let sessionConfig: Parameters<typeof createSessionSigner>[1] | null = null;
+  let executor: ReturnType<typeof createExecutor> | null = null;
+
+  if (!dryRun) {
+    const sessionPath = process.env.SESSION_CONFIG_PATH ?? "data/session.json";
+    if (!existsSync(sessionPath)) {
+      throw new Error(`SessionConfig file missing at ${sessionPath} — complete onboarding first.`);
+    }
+    sessionConfig = JSON.parse(readFileSync(sessionPath, "utf8")) as Parameters<typeof createSessionSigner>[1];
+    const signer = createSessionSigner(cfg, sessionConfig);
+    executor = createExecutor({
+      cfg,
+      publicClient: reader.publicClient,
+      signer,
+      agentContracts: {
+        boostManager: agent.contracts.boostManager,
+        bakery: agent.contracts.bakery,
+      },
+      log,
+    });
+  }
 
   log.info("bot up", { clanId: cfg.clanId, agwOwner: cfg.agwOwnerAddress });
-  await tg.send(`Rugpull bot started, clan ${cfg.clanId}`);
+  const startupMsg = dryRun
+    ? `Rugpull bot started in DRY-RUN mode (no tx will be sent), clan ${cfg.clanId}`
+    : `Rugpull bot started, clan ${cfg.clanId}`;
+  await tg.send(startupMsg);
 
   let killAnnouncedAt = 0;
   let backoffMs = 0;
@@ -110,8 +119,8 @@ async function main(): Promise<void> {
         continue;
       }
 
-      await maybeWarnExpiry(sessionConfig, tg, log);
       await maybeEmitDailySummary(safety, tg);
+      if (!dryRun && sessionConfig) await maybeWarnExpiry(sessionConfig, tg, log);
 
       const state = await reader.read();
       const action = decide(state, cfg);
@@ -131,6 +140,20 @@ async function main(): Promise<void> {
         continue;
       }
 
+      if (dryRun) {
+        log.info("dry-run tick", {
+          actionKind: action.kind,
+          multiplierBps: state.effectiveMultiplierBps,
+          activeRugsCount: state.activeRugs.length,
+          activeBoostsCount: state.activeBoosts.length,
+          blocksSinceLastBake: Number(state.blockNumber - state.lastBakeBlock),
+          ethWei: state.ethWei,
+        });
+        backoffMs = 0;
+        await sleep(cfg.pollIntervalMs);
+        continue;
+      }
+
       const estGas = 200_000n * (await reader.publicClient.getGasPrice());
       const estVrf = action.kind === "cleanup" ? state.vrfFeeWei : 0n;
       const pre = safety.preflight(estGas, estVrf);
@@ -140,7 +163,7 @@ async function main(): Promise<void> {
         continue;
       }
 
-      const result = await executor.execute(action, {
+      const result = await executor!.execute(action, {
         clanId: cfg.clanId,
         cleanupBoostTypeId: state.cleanupCrewBoostTypeId,
         vrfFeeWei: state.vrfFeeWei,

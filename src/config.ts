@@ -62,3 +62,10 @@ export function loadConfigFromDisk(): Config {
   const rawJson = JSON.parse(readFileSync("config.json", "utf8"));
   return parseConfig(rawJson, process.env);
 }
+
+export function isDryRun(
+  argv: readonly string[] = process.argv,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return argv.includes("--dry-run") || env.DRY_RUN === "1";
+}

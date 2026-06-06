@@ -50,6 +50,29 @@ docker compose up -d --build
 docker compose logs -f bot
 ```
 
+## Dry-run mode
+
+To verify the bot can read chain state and that ABI assumptions match live
+contracts — without spending ETH — start in dry-run:
+
+```bash
+DRY_RUN=1 npm run dev
+# or
+node dist/main.js --dry-run
+```
+
+In dry-run the bot:
+- Reads chain state every tick
+- Computes the decision (`bake` / `cleanup` / `sleep`) and logs it
+- Never sends a transaction
+- Does not require `data/session.json`
+
+You still need `SESSION_KEY_PRIVATE_KEY` to be a well-formed 64-char hex string
+in `.env` (it is parsed but never used in dry-run — `0x` plus 64 zeros works).
+
+Use this mode to confirm multiplier, rugs, and balance reads work before
+configuring the real session key.
+
 ## Maintenance
 
 - Renew the session key every 30 days. The bot warns via Telegram 3 days
