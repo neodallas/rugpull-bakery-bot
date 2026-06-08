@@ -95,4 +95,32 @@ describe("safety-caps", () => {
     }
     expect(caps.isKilled()).toBe(true);
   });
+
+  it("calls onCorruption when safety.json is unparseable", () => {
+    writeFileSync(path, "{not valid json");
+    let called = false;
+    let capturedErr: Error | null = null;
+    createSafetyCaps(path, cfg, (err) => {
+      called = true;
+      capturedErr = err;
+    });
+    expect(called).toBe(true);
+    expect(capturedErr).toBeInstanceOf(Error);
+  });
+
+  it("still starts with fresh counters after corruption (does not throw)", () => {
+    writeFileSync(path, "{not valid json");
+    const caps = createSafetyCaps(path, cfg, () => {});
+    const s = caps.snapshot();
+    expect(s.gasSpentWei).toBe(0n);
+    expect(s.bakeCountToday).toBe(0);
+  });
+
+  it("does not call onCorruption when safety.json is valid", () => {
+    const caps = createSafetyCaps(path, cfg);
+    caps.recordTxResult({ ok: true, txHash: "0x1", gasUsedWei: 5n, vrfPaidWei: 0n });
+    let called = false;
+    createSafetyCaps(path, cfg, () => { called = true; });
+    expect(called).toBe(false);
+  });
 });

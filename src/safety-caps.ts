@@ -22,7 +22,7 @@ function freshState(): SafetyState {
   };
 }
 
-function loadOrFresh(path: string): SafetyState {
+function loadOrFresh(path: string, onCorruption?: (err: Error) => void): SafetyState {
   if (!existsSync(path)) return freshState();
   try {
     const raw = JSON.parse(readFileSync(path, "utf8"));
@@ -37,7 +37,10 @@ function loadOrFresh(path: string): SafetyState {
       killSwitchUntil: raw.killSwitchUntil ?? null,
       killSwitchReason: raw.killSwitchReason ?? null,
     };
-  } catch {
+  } catch (err) {
+    if (onCorruption) {
+      onCorruption(err instanceof Error ? err : new Error(String(err)));
+    }
     return freshState();
   }
 }
@@ -66,9 +69,10 @@ export function createSafetyCaps(
   cfg: Pick<
     Config,
     "maxGasPerDayWei" | "maxVrfPerDayWei" | "maxBakesPerHour" | "maxFailedTxConsecutive"
-  >
+  >,
+  onCorruption?: (err: Error) => void
 ): SafetyCaps {
-  let state = loadOrFresh(path);
+  let state = loadOrFresh(path, onCorruption);
 
   function rolloverIfNeeded(): void {
     const today = todayUtc();

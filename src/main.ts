@@ -35,8 +35,12 @@ async function main(): Promise<void> {
   const dryRun = isDryRun();
   log.info("startup mode", { dryRun });
 
-  const safety = createSafetyCaps(SAFETY_PATH, cfg);
   const tg = createTelegramNotifier(cfg.telegram);
+  const safety = createSafetyCaps(SAFETY_PATH, cfg, (err) => {
+    log.error("safety.json corrupt — counters reset to zero", { msg: err.message });
+    // Send TG alert asynchronously; don't block startup
+    tg.send(`CRITICAL: safety.json was corrupt at startup, counters reset to zero. Review immediately.`).catch(() => {});
+  });
   const reader = createStateReader(cfg);
   const expiryWarner = createExpiryWarner();
   const dailySummary = createDailySummaryTracker();

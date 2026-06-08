@@ -1,7 +1,7 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createLogger } from "../src/logger.js";
 
 let dir: string;
@@ -57,5 +57,18 @@ describe("logger", () => {
     log.info("x", { wei: 12345678901234567890n });
     const parsed = JSON.parse(readFileSync(join(dir, "events.jsonl"), "utf8"));
     expect(parsed.wei).toBe("12345678901234567890");
+  });
+
+  it("rotates the log file on UTC date change", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-05T23:59:50Z"));
+    const logPath = join(dir, "events.jsonl");
+    const log = createLogger(logPath);
+    log.info("before");
+    vi.setSystemTime(new Date("2026-06-06T00:00:10Z"));
+    log.info("after");
+    expect(existsSync(join(dir, "events-2026-06-05.jsonl"))).toBe(true);
+    expect(existsSync(logPath)).toBe(true);
+    vi.useRealTimers();
   });
 });
