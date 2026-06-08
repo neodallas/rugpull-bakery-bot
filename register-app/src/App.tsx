@@ -7,7 +7,6 @@ import { parseEther, toFunctionSelector, custom, http, type Address, type Hex } 
 import { abstract } from "viem/chains";
 
 const BAKERY_ADDRESS: Address = "0x30b49389D5271712b7e539a690B2F7b92afA3c31";
-const BOOST_MANAGER_ADDRESS: Address = "0x4F97015601863C256892e0a5e2710b48E149948C";
 const SESSION_SIGNER: Address = "0x1584679D54Ee4607bFF631fbD5A01364FcE3B400";
 const SESSION_EXPIRES_AT_UNIX = 1783323465n;
 const ABSTRACT_RPC_URL = "https://api.mainnet.abs.xyz";
@@ -28,13 +27,13 @@ const SESSION_CONFIG: SessionConfig = {
       maxValuePerUse: 0n,
       constraints: [],
     },
-    {
-      target: BOOST_MANAGER_ADDRESS,
-      selector: toFunctionSelector("function purchaseBoost(uint256,uint256)") as Hex,
-      valueLimit: LimitUnlimited,
-      maxValuePerUse: parseEther("0.001"),
-      constraints: [],
-    },
+    // NOTE: BoostManager.purchaseBoost(...) is NOT in callPolicies because
+    // BoostManager is not registered in SessionKeyPolicyRegistry on Abstract
+    // mainnet — the SDK rejects the createSession tx with
+    // "Session key policy violation. Target: 0x4F97...; Status: Unset"
+    // if we include it. The bot therefore cannot do automated Sweeper cleanup
+    // through its session key — cleanup must be triggered manually via the
+    // site (or via the site's auto-cooking session, which is on-chain anyway).
   ],
   transferPolicies: [],
 };
@@ -121,7 +120,10 @@ export default function App() {
         <div><b>fee cap:</b> 0.05 ETH lifetime</div>
         <div style={{ marginTop: 6 }}><b>allowed calls:</b></div>
         <div>&nbsp;&nbsp;• Bakery.bake() — value 0</div>
-        <div>&nbsp;&nbsp;• BoostManager.purchaseBoost(uint256,uint256) — max value 0.001 ETH</div>
+        <div style={{ marginTop: 6, color: "#666" }}>
+          (BoostManager.purchaseBoost is intentionally omitted — it is not in
+          SessionKeyPolicyRegistry on Abstract mainnet. Manual cleanup via site.)
+        </div>
       </div>
       <p style={{ marginTop: 16 }}>
         <button
