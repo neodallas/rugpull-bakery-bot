@@ -127,10 +127,16 @@ export function createStateReader(cfg: Config): StateReader {
         severityBps: Number(b.severityBps),
       }));
 
-      // Skill is always Sweeper — onboarding invariant
-      const playerSkill = "Sweeper" as const;
+      // Skill is reported as "None" because the bot's session key has no
+      // policy on BoostManager (purchaseBoost is not in the mainnet
+      // SessionKeyPolicyRegistry, so it was omitted from the session). The
+      // decision engine reads playerSkill to decide cleanup; "None" causes
+      // the cleanup branch to be skipped entirely. Cleanup must be triggered
+      // manually via the site (or by the site's separate auto-cooking session).
+      const playerSkill = "None" as const;
 
-      // Sweeper free-cleanup cooldown tracked locally
+      // Sweeper cooldown is still read for telemetry, but is never used to
+      // trigger cleanup because playerSkill === "None" above.
       const cooldownState = readSweeperCooldown(DATA_DIR);
       const sweeperFreeReady = isSweeperFreeReady(cooldownState, Math.floor(Date.now() / 1000));
 
