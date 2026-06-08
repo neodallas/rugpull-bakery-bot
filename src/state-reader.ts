@@ -8,6 +8,21 @@ import type { Address, Config, Debuff, State } from "./types.js";
 const ABSTRACT_CHAIN_ID = 2741;
 const DATA_DIR = "data";
 
+/**
+ * Thrown when SOME (but not all) of the batched chain reads fail. This is
+ * distinguished from a hard error so main.ts can retry at normal cadence
+ * instead of triggering exponential backoff — a single transient RPC
+ * timeout shouldn't punish an otherwise-healthy bot for 60s.
+ */
+export class PartialReadError extends Error {
+  readonly failures: string[];
+  constructor(failures: string[]) {
+    super(`partial read failure: ${failures.join(", ")}`);
+    this.name = "PartialReadError";
+    this.failures = failures;
+  }
+}
+
 export function findCleanupCrewBoostTypeId(
   catalog: BoostCatalogEntry[]
 ): number | null {
@@ -40,14 +55,7 @@ export function createStateReader(cfg: Config): StateReader {
       const agent = await getAgentJson();
       const cleanupId = findCleanupCrewBoostTypeId(agent.liveState.activeBoostCatalog);
 
-      const [
-        ethWei,
-        blockNumber,
-        multiplier,
-        rawRugs,
-        rawBoosts,
-        lastBakeBlockRaw,
-      ] = await Promise.all([
+      const results = await Promise.allSettled([
         publicClient.getBalance({ address: cfg.agwOwnerAddress }),
         publicClient.getBlockNumber(),
         publicClient.readContract({
@@ -75,6 +83,29 @@ export function createStateReader(cfg: Config): StateReader {
           args: [cfg.agwOwnerAddress],
         }),
       ]);
+
+      const labels = [
+        "balance",
+        "blockNumber",
+        "effectiveMultiplier",
+        "activeDebuffs",
+        "activeBoosts",
+        "lastBake",
+      ];
+      const failures: string[] = [];
+      results.forEach((r, i) => {
+        if (r.status === "rejected") failures.push(labels[i]!);
+      });
+      if (failures.length === results.length) {
+        throw (results[0] as PromiseRejectedResult).reason;
+      }
+      if (failures.length > 0) {
+        throw new PartialReadError(failures);
+      }
+
+      const [ethWei, blockNumber, multiplier, rawRugs, rawBoosts, lastBakeBlockRaw] = results.map(
+        (r) => (r as PromiseFulfilledResult<unknown>).value
+      );
 
       const activeRugs: Debuff[] = (rawRugs as Array<{
         boostTypeId: bigint;

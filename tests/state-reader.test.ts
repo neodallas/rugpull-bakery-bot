@@ -93,3 +93,13 @@ describe("findCleanupCrewBoostTypeId", () => {
     ).toBeNull();
   });
 });
+
+describe("PartialReadError", () => {
+  it("is exported and constructable with failures list", async () => {
+    const { PartialReadError } = await import("../src/state-reader.js");
+    const e = new PartialReadError(["balance", "blockNumber"]);
+    expect(e.name).toBe("PartialReadError");
+    expect(e.failures).toEqual(["balance", "blockNumber"]);
+    expect(e.message).toContain("balance");
+  });
+});

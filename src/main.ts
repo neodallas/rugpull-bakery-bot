@@ -7,7 +7,7 @@ import { getAgentJson } from "./agent-json.js";
 import { createLogger } from "./logger.js";
 import { createSafetyCaps } from "./safety-caps.js";
 import { decide } from "./decision-engine.js";
-import { createStateReader, assertChainId } from "./state-reader.js";
+import { createStateReader, assertChainId, PartialReadError } from "./state-reader.js";
 import { createSessionSigner } from "./session-key.js";
 import { createExecutor, isInvalidSessionError } from "./executor.js";
 import { createTelegramNotifier } from "./telegram-notifier.js";
@@ -187,6 +187,12 @@ async function main(): Promise<void> {
       backoffMs = 0;
       await sleep(cfg.pollIntervalMs);
     } catch (err) {
+      if (err instanceof PartialReadError) {
+        log.warn("partial read", { failures: err.failures });
+        backoffMs = 0;
+        await sleep(cfg.pollIntervalMs);
+        continue;
+      }
       const msg = err instanceof Error ? err.message : String(err);
       log.error("tick error", { msg });
       backoffMs = Math.min(60_000, backoffMs === 0 ? 1000 : backoffMs * 2);
