@@ -1,35 +1,58 @@
 import { useState } from "react";
 import { useAccount } from "wagmi";
-import { useLoginWithAbstract, useAbstractClient } from "@abstract-foundation/agw-react";
+import { useLoginWithAbstract, useCreateSession } from "@abstract-foundation/agw-react";
+import { LimitType, LimitUnlimited, type SessionConfig } from "@abstract-foundation/agw-client/sessions";
+import { parseEther, toFunctionSelector, type Address, type Hex } from "viem";
 
-const TX_PARAMS = {
-  to: "0x34ca1501FAE231cC2ebc995CE013Dbe882d7d081" as const,
-  value: 0n,
-  data: "0x5a0694d200000000000000000000000000000000000000000000000000000000000000200000000000000000000000001584679d54ee4607bff631fbd5a01364fce3b400000000000000000000000000000000000000000000000000000000006a4b5b49000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000b1a2bc2ec50000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000e0000000000000000000000000000000000000000000000000000000000000034000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000014000000000000000000000000030b49389d5271712b7e539a690b2f7b92afa3c31b0de262e00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000e000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004f97015601863c256892e0a5e2710b48e149948c0ed20e950000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000038d7ea4c6800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000e000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" as const,
-} as const;
+const BAKERY_ADDRESS: Address = "0x30b49389D5271712b7e539a690B2F7b92afA3c31";
+const BOOST_MANAGER_ADDRESS: Address = "0x4F97015601863C256892e0a5e2710b48E149948C";
+const SESSION_SIGNER: Address = "0x1584679D54Ee4607bFF631fbD5A01364FcE3B400";
+const SESSION_EXPIRES_AT_UNIX = 1783323465n;
+
+const SESSION_CONFIG: SessionConfig = {
+  signer: SESSION_SIGNER,
+  expiresAt: SESSION_EXPIRES_AT_UNIX,
+  feeLimit: {
+    limitType: LimitType.Lifetime,
+    limit: parseEther("0.05"),
+    period: 0n,
+  },
+  callPolicies: [
+    {
+      target: BAKERY_ADDRESS,
+      selector: toFunctionSelector("function bake()") as Hex,
+      valueLimit: LimitUnlimited,
+      maxValuePerUse: 0n,
+      constraints: [],
+    },
+    {
+      target: BOOST_MANAGER_ADDRESS,
+      selector: toFunctionSelector("function purchaseBoost(uint256,uint256)") as Hex,
+      valueLimit: LimitUnlimited,
+      maxValuePerUse: parseEther("0.001"),
+      constraints: [],
+    },
+  ],
+  transferPolicies: [],
+};
 
 const EXPECTED_AGW = "0x3b7714d090618eA6C0063546faE02b8E6a21Db3a";
 
 export default function App() {
   const { address, isConnected } = useAccount();
   const { login, logout } = useLoginWithAbstract();
-  const { data: client } = useAbstractClient();
+  const { createSessionAsync, isPending } = useCreateSession();
 
-  const [status, setStatus] = useState<"idle" | "pending" | "ok" | "err">("idle");
+  const [status, setStatus] = useState<"idle" | "ok" | "err">("idle");
   const [txHash, setTxHash] = useState<string | null>(null);
   const [errMsg, setErrMsg] = useState<string | null>(null);
 
   async function submit() {
-    if (!client) return;
-    setStatus("pending");
+    setStatus("idle");
     setErrMsg(null);
     try {
-      const hash = await client.sendTransaction({
-        to: TX_PARAMS.to,
-        value: TX_PARAMS.value,
-        data: TX_PARAMS.data,
-      });
-      setTxHash(hash);
+      const result = await createSessionAsync({ session: SESSION_CONFIG });
+      setTxHash(result.transactionHash ?? null);
       setStatus("ok");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -58,6 +81,7 @@ export default function App() {
   }
 
   const wrongWallet = address && address.toLowerCase() !== EXPECTED_AGW.toLowerCase();
+  const expiresIso = new Date(Number(SESSION_EXPIRES_AT_UNIX) * 1000).toISOString();
 
   return (
     <div style={styles.wrap}>
@@ -68,16 +92,26 @@ export default function App() {
           ⚠ This wallet is not the AGW recorded in <code>.env</code> ({EXPECTED_AGW}). Disconnect and reconnect with the correct AGW.
         </div>
       )}
-      <h3>Transaction parameters</h3>
+      <h3>Session policy</h3>
       <div style={styles.card}>
-        <div><b>to:</b> {TX_PARAMS.to}</div>
-        <div><b>value:</b> {TX_PARAMS.value.toString()} wei</div>
-        <div><b>data:</b> {TX_PARAMS.data.slice(0, 66)}... ({TX_PARAMS.data.length / 2 - 1} bytes)</div>
+        <div><b>signer:</b> {SESSION_SIGNER}</div>
+        <div><b>expires:</b> {expiresIso}</div>
+        <div><b>fee cap:</b> 0.05 ETH lifetime</div>
+        <div style={{ marginTop: 6 }}><b>allowed calls:</b></div>
+        <div>&nbsp;&nbsp;• Bakery.bake() — value 0</div>
+        <div>&nbsp;&nbsp;• BoostManager.purchaseBoost(uint256,uint256) — max value 0.001 ETH</div>
       </div>
       <p style={{ marginTop: 16 }}>
-        <button style={styles.primary} disabled={!client || status === "pending" || wrongWallet === true} onClick={submit}>
-          {status === "pending" ? "Submitting…" : "Submit createSession"}
+        <button
+          style={styles.primary}
+          disabled={isPending || wrongWallet === true}
+          onClick={submit}
+        >
+          {isPending ? "Submitting…" : "Submit createSession"}
         </button>
+      </p>
+      <p style={{ fontSize: 13, color: "#666" }}>
+        Uses the SDK's <code>useCreateSession</code> hook, which routes signing through your AGW owner key (not any active site session).
       </p>
       {status === "ok" && txHash && (
         <div style={styles.ok}>
