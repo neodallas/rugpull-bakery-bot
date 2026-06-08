@@ -1,6 +1,7 @@
 import type { PublicClient } from "viem";
 import { BOOST_MANAGER_READ_ABI, BAKERY_WRITE_ABI } from "./abis.js";
 import type { Logger } from "./logger.js";
+import { clearPending, writePending } from "./pending-tx.js";
 import type { SessionSigner } from "./session-key.js";
 import type { Action, Config, Hex, TxResult } from "./types.js";
 
@@ -86,8 +87,9 @@ export function createExecutor(opts: {
   signer: SessionSigner;
   agentContracts: { boostManager: Hex; bakery: Hex };
   log: Logger;
+  dataDir: string;
 }): Executor {
-  const { cfg, publicClient, signer, agentContracts, log } = opts;
+  const { cfg, publicClient, signer, agentContracts, log, dataDir } = opts;
   setRpcUrlForReasonSanitization(cfg.rpcUrl);
 
   async function send(
@@ -97,19 +99,27 @@ export function createExecutor(opts: {
   ): Promise<TxResult> {
     try {
       const hash = await txHash;
+      writePending(dataDir, {
+        kind: description as "bake" | "cleanup",
+        txHash: hash,
+        broadcastAtUnix: Math.floor(Date.now() / 1000),
+      });
       const receipt = await publicClient.waitForTransactionReceipt({ hash, confirmations: 1 });
       const gasUsedWei = receipt.gasUsed * (receipt.effectiveGasPrice ?? 0n);
       if (receipt.status !== "success") {
         const reason = `${description} reverted on-chain (post-simulation race)`;
         log.warn("tx reverted", { description, txHash: hash, reason });
+        clearPending(dataDir);
         return { ok: false, reason, expected: false };
       }
       log.info("tx ok", { description, txHash: hash, gasUsedWei, vrfPaidWei });
+      clearPending(dataDir);
       return { ok: true, txHash: hash, gasUsedWei, vrfPaidWei };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       const { expected, reason } = classifyRevert(msg);
       log.warn("tx failed", { description, reason, expected });
+      clearPending(dataDir);
       return { ok: false, reason, expected };
     }
   }

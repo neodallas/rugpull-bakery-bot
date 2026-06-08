@@ -12,11 +12,20 @@ import { createSessionSigner } from "./session-key.js";
 import { createExecutor, isInvalidSessionError } from "./executor.js";
 import { createTelegramNotifier } from "./telegram-notifier.js";
 import { recordSweeperCleanup } from "./sweeper-cooldown.js";
+import { readPending, clearPending } from "./pending-tx.js";
 
 const DATA_DIR = "data";
 const KILL_FLAG_PATH = join(DATA_DIR, "kill.flag");
 const SAFETY_PATH = join(DATA_DIR, "safety.json");
 const LOG_PATH = join(DATA_DIR, "events.jsonl");
+
+let shouldStop = false;
+process.on("SIGTERM", () => { shouldStop = true; });
+process.on("SIGINT", () => { shouldStop = true; });
+process.on("unhandledRejection", (err) => {
+  console.error("unhandledRejection", err);
+  process.exit(1);
+});
 
 // Gap 2 — session expiry warning
 const THREE_DAYS_S = 3 * 24 * 60 * 60;
@@ -94,6 +103,7 @@ async function main(): Promise<void> {
         bakery: agent.contracts.bakery,
       },
       log,
+      dataDir: DATA_DIR,
     });
   }
 
@@ -103,11 +113,40 @@ async function main(): Promise<void> {
     : `Rugpull bot started, clan ${cfg.clanId}`;
   await tg.send(startupMsg);
 
+  if (!dryRun) {
+    const pending = readPending(DATA_DIR);
+    if (pending) {
+      log.warn("found pending tx from previous run", { kind: pending.kind, txHash: pending.txHash });
+      try {
+        const receipt = await reader.publicClient.waitForTransactionReceipt({ hash: pending.txHash, confirmations: 1, timeout: 60_000 });
+        if (receipt.status === "success") {
+          log.info("pending tx resolved ok", { txHash: pending.txHash, blockNumber: receipt.blockNumber });
+          await tg.send(`Recovered pending ${pending.kind} after restart: ${pending.txHash}`);
+        } else {
+          log.warn("pending tx resolved reverted", { txHash: pending.txHash });
+          await tg.send(`Pending ${pending.kind} reverted after restart: ${pending.txHash}`);
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        log.warn("pending tx unresolved (timeout or dropped)", { txHash: pending.txHash, msg });
+        await tg.send(`Pending ${pending.kind} could not be resolved (may have been dropped): ${pending.txHash}`);
+      } finally {
+        clearPending(DATA_DIR);
+      }
+    }
+  }
+
   let killAnnouncedAt = 0;
   let backoffMs = 0;
 
   while (true) {
     try {
+      if (shouldStop) {
+        log.info("shutting down");
+        await tg.send("Rugpull bot shutting down");
+        break;
+      }
+
       if (safety.isKilled(KILL_FLAG_PATH)) {
         const snap = safety.snapshot();
         if (Date.now() - killAnnouncedAt > 60 * 60 * 1000) {
