@@ -1,13 +1,16 @@
 import { useState } from "react";
 import { useAccount } from "wagmi";
-import { useLoginWithAbstract, useCreateSession } from "@abstract-foundation/agw-react";
+import { useLoginWithAbstract, useGlobalWalletSignerClient } from "@abstract-foundation/agw-react";
+import { createAbstractClient } from "@abstract-foundation/agw-client";
 import { LimitType, LimitUnlimited, type SessionConfig } from "@abstract-foundation/agw-client/sessions";
-import { parseEther, toFunctionSelector, type Address, type Hex } from "viem";
+import { parseEther, toFunctionSelector, custom, http, type Address, type Hex } from "viem";
+import { abstract } from "viem/chains";
 
 const BAKERY_ADDRESS: Address = "0x30b49389D5271712b7e539a690B2F7b92afA3c31";
 const BOOST_MANAGER_ADDRESS: Address = "0x4F97015601863C256892e0a5e2710b48E149948C";
 const SESSION_SIGNER: Address = "0x1584679D54Ee4607bFF631fbD5A01364FcE3B400";
 const SESSION_EXPIRES_AT_UNIX = 1783323465n;
+const ABSTRACT_RPC_URL = "https://api.mainnet.abs.xyz";
 
 const SESSION_CONFIG: SessionConfig = {
   signer: SESSION_SIGNER,
@@ -41,8 +44,9 @@ const EXPECTED_AGW = "0x3b7714d090618eA6C0063546faE02b8E6a21Db3a";
 export default function App() {
   const { address, isConnected } = useAccount();
   const { login, logout } = useLoginWithAbstract();
-  const { createSessionAsync, isPending } = useCreateSession();
+  const { data: signer } = useGlobalWalletSignerClient();
 
+  const [isPending, setIsPending] = useState(false);
   const [status, setStatus] = useState<"idle" | "ok" | "err">("idle");
   const [txHash, setTxHash] = useState<string | null>(null);
   const [errMsg, setErrMsg] = useState<string | null>(null);
@@ -50,14 +54,32 @@ export default function App() {
   async function submit() {
     setStatus("idle");
     setErrMsg(null);
+    setIsPending(true);
     try {
-      const result = await createSessionAsync({ session: SESSION_CONFIG });
+      if (!signer?.account) throw new Error("No owner EOA signer available — reconnect AGW");
+      if (!address) throw new Error("No AGW account address");
+      // Build the AGW client manually with isPrivyCrossApp:false so createSession
+      // signs locally via EIP-712 with the owner EOA and submits via sendRawTransaction.
+      // useAbstractClient/useCreateSession hardcode isPrivyCrossApp:true which routes
+      // through Privy's hosted cross-app bridge — that bridge auto-selects the active
+      // site session and the policy validator rejects new SessionConfig targets it
+      // wasn't authorised for.
+      const ownerClient = await createAbstractClient({
+        signer: signer.account,
+        chain: abstract,
+        transport: custom(signer.transport),
+        publicTransport: http(ABSTRACT_RPC_URL),
+        isPrivyCrossApp: false,
+      });
+      const result = await ownerClient.createSession({ session: SESSION_CONFIG, account: address as Address, chain: abstract });
       setTxHash(result.transactionHash ?? null);
       setStatus("ok");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setErrMsg(msg);
       setStatus("err");
+    } finally {
+      setIsPending(false);
     }
   }
 
@@ -104,14 +126,16 @@ export default function App() {
       <p style={{ marginTop: 16 }}>
         <button
           style={styles.primary}
-          disabled={isPending || wrongWallet === true}
+          disabled={isPending || wrongWallet === true || !signer?.account}
           onClick={submit}
         >
           {isPending ? "Submitting…" : "Submit createSession"}
         </button>
       </p>
       <p style={{ fontSize: 13, color: "#666" }}>
-        Uses the SDK's <code>useCreateSession</code> hook, which routes signing through your AGW owner key (not any active site session).
+        Constructs an AGW client with <code>isPrivyCrossApp: false</code> so signing
+        happens locally via the owner EOA (EIP-712), bypassing Privy's cross-app
+        bridge — which is where active site sessions would otherwise auto-route the call.
       </p>
       {status === "ok" && txHash && (
         <div style={styles.ok}>
