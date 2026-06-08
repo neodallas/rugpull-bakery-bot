@@ -12,7 +12,8 @@
     "start": "node dist/main.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "create-session": "tsx scripts/create-session-config.ts"
+    "create-session": "tsx scripts/create-session-config.ts",
+    "prepare-register-tx": "tsx -r dotenv/config scripts/prepare-register-tx.ts"
   },
   "dependencies": {
     "@abstract-foundation/agw-client": "^1.8.0",
