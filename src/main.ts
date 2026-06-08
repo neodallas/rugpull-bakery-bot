@@ -13,6 +13,7 @@ import { createExecutor, isInvalidSessionError } from "./executor.js";
 import { createTelegramNotifier } from "./telegram-notifier.js";
 import { recordSweeperCleanup } from "./sweeper-cooldown.js";
 import { readPending, clearPending } from "./pending-tx.js";
+import { createExpiryWarner, createDailySummaryTracker, createHeartbeat } from "./main-helpers.js";
 
 const DATA_DIR = "data";
 const KILL_FLAG_PATH = join(DATA_DIR, "kill.flag");
@@ -27,46 +28,6 @@ process.on("unhandledRejection", (err) => {
   process.exit(1);
 });
 
-// Gap 2 — session expiry warning
-const THREE_DAYS_S = 3 * 24 * 60 * 60;
-let lastExpiryWarnDate = "";
-async function maybeWarnExpiry(
-  sessionConfig: { expiresAt: bigint },
-  tg: { send: (t: string) => Promise<void> },
-  log: { warn: (m: string, f?: Record<string, unknown>) => void },
-): Promise<void> {
-  const now = Math.floor(Date.now() / 1000);
-  const expires = Number(sessionConfig.expiresAt);
-  if (expires - now > THREE_DAYS_S) return;
-  const today = new Date().toISOString().slice(0, 10);
-  if (lastExpiryWarnDate === today) return;
-  lastExpiryWarnDate = today;
-  const hoursLeft = Math.max(0, Math.floor((expires - now) / 3600));
-  log.warn("session key expiry approaching", { hoursLeft });
-  await tg.send(`Session key expires in ~${hoursLeft}h — rotate soon`);
-}
-
-// Gap 3 — daily UTC summary
-let lastSeenDate = new Date().toISOString().slice(0, 10);
-let summarySnapshot: ReturnType<typeof createSafetyCaps>["snapshot"] extends () => infer R ? R : never = {} as never;
-async function maybeEmitDailySummary(
-  safety: ReturnType<typeof createSafetyCaps>,
-  tg: { send: (t: string) => Promise<void> },
-): Promise<void> {
-  const today = new Date().toISOString().slice(0, 10);
-  if (today === lastSeenDate) {
-    summarySnapshot = safety.snapshot();
-    return;
-  }
-  const prev = summarySnapshot;
-  lastSeenDate = today;
-  summarySnapshot = safety.snapshot();
-  if (!prev || prev.bakeCountToday === undefined) return;
-  await tg.send(
-    `Daily summary ${prev.dateUtc}: ${prev.bakeCountToday} bakes, gas ${prev.gasSpentWei} wei, vrf ${prev.vrfSpentWei} wei`,
-  );
-}
-
 async function main(): Promise<void> {
   if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
   const log = createLogger(LOG_PATH);
@@ -77,6 +38,9 @@ async function main(): Promise<void> {
   const safety = createSafetyCaps(SAFETY_PATH, cfg);
   const tg = createTelegramNotifier(cfg.telegram);
   const reader = createStateReader(cfg);
+  const expiryWarner = createExpiryWarner();
+  const dailySummary = createDailySummaryTracker();
+  const heartbeat = createHeartbeat();
 
   await assertChainId(reader.publicClient);
   const agent = await getAgentJson();
@@ -158,10 +122,11 @@ async function main(): Promise<void> {
         continue;
       }
 
-      await maybeEmitDailySummary(safety, tg);
-      if (!dryRun && sessionConfig) await maybeWarnExpiry(sessionConfig, tg, log);
+      await dailySummary.maybeEmit(safety, tg);
+      if (!dryRun && sessionConfig) await expiryWarner.maybeWarn(sessionConfig, tg, log);
 
       const state = await reader.read();
+      await heartbeat.maybeBeat(state, tg);
       const action = decide(state, cfg);
 
       if (action.kind === "sleep") {
@@ -175,6 +140,7 @@ async function main(): Promise<void> {
           await tg.send(`ETH balance low: ${state.ethWei} wei`);
         }
         backoffMs = 0;
+        dailySummary.recordSnapshot(safety);
         await sleep(cfg.pollIntervalMs);
         continue;
       }
@@ -189,6 +155,7 @@ async function main(): Promise<void> {
           ethWei: state.ethWei,
         });
         backoffMs = 0;
+        dailySummary.recordSnapshot(safety);
         await sleep(cfg.pollIntervalMs);
         continue;
       }
@@ -198,6 +165,8 @@ async function main(): Promise<void> {
       const pre = safety.preflight(estGas, estVrf);
       if (!pre.ok) {
         log.info("preflight blocked", { reason: pre.reason });
+        backoffMs = 0;
+        dailySummary.recordSnapshot(safety);
         await sleep(cfg.pollIntervalMs);
         continue;
       }
@@ -224,6 +193,7 @@ async function main(): Promise<void> {
       }
 
       backoffMs = 0;
+      dailySummary.recordSnapshot(safety);
       await sleep(cfg.pollIntervalMs);
     } catch (err) {
       if (err instanceof PartialReadError) {
