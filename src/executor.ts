@@ -40,10 +40,35 @@ export function isInvalidSessionError(message: string): boolean {
   return INVALID_SESSION_HINTS.some((h) => m.includes(h.toLowerCase()));
 }
 
-function classifyRevert(message: string): { expected: boolean; reason: string } {
-  const reason = message.slice(0, 200);
+let configuredRpcUrl: string | null = null;
+
+/**
+ * Records the configured RPC URL so `sanitizeReason` can strip it from any
+ * error message before that message is surfaced to Telegram. RPC URLs
+ * (e.g. Alchemy-style `https://x.g.alchemy.com/v2/SECRET`) can carry an
+ * embedded API key — if a network error message echoes the URL back, that
+ * key must never reach chat history.
+ */
+export function setRpcUrlForReasonSanitization(url: string): void {
+  configuredRpcUrl = url || null;
+}
+
+export function sanitizeReason(message: string): string {
+  let out = message;
+  // Strip the configured RPC URL specifically (most likely place a secret could appear)
+  if (configuredRpcUrl) {
+    out = out.split(configuredRpcUrl).join("[RPC]");
+  }
+  // Defensive: strip any URL with a long-ish path segment (looks like an API key)
+  out = out.replace(/https?:\/\/[^\s"']*\/[a-zA-Z0-9_-]{16,}[^\s"']*/g, "[URL-WITH-KEY]");
+  return out;
+}
+
+export function classifyRevert(message: string): { expected: boolean; reason: string } {
+  const reason = sanitizeReason(message).slice(0, 200);
+  const m = message.toLowerCase();
   for (const hint of EXPECTED_REVERT_HINTS) {
-    if (message.includes(hint)) return { expected: true, reason: hint };
+    if (m.includes(hint.toLowerCase())) return { expected: true, reason: hint };
   }
   return { expected: false, reason };
 }
@@ -63,6 +88,7 @@ export function createExecutor(opts: {
   log: Logger;
 }): Executor {
   const { cfg, publicClient, signer, agentContracts, log } = opts;
+  setRpcUrlForReasonSanitization(cfg.rpcUrl);
 
   async function send(
     description: string,
