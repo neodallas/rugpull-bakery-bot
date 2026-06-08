@@ -103,3 +103,56 @@ describe("PartialReadError", () => {
     expect(e.message).toContain("balance");
   });
 });
+
+describe("agent.json zod validation", () => {
+  it("rejects missing contracts field", async () => {
+    const { _resetAgentJsonCacheForTests, getAgentJson } = await import("../src/agent-json.js");
+    _resetAgentJsonCacheForTests();
+    const fetcher = vi.fn(async () =>
+      ({ ok: true, json: async () => ({ network: { chainId: 2741 }, liveState: {} }) } as unknown as Response)
+    );
+    await expect(getAgentJson(fetcher)).rejects.toThrow();
+  });
+  it("rejects invalid bakery address shape", async () => {
+    const { _resetAgentJsonCacheForTests, getAgentJson } = await import("../src/agent-json.js");
+    _resetAgentJsonCacheForTests();
+    const fetcher = vi.fn(async () =>
+      ({
+        ok: true,
+        json: async () => ({
+          network: { chainId: 2741 },
+          contracts: {
+            bakery: "not-an-address",
+            boostManager: "0xaaaa000000000000000000000000000000000000",
+            playerRegistry: "0xaaaa000000000000000000000000000000000000",
+            clanRegistry: "0xaaaa000000000000000000000000000000000000",
+          },
+          liveState: { currentSeasonId: 10, vrfFeeWei: "0", gameplayCaps: { bakeryTiers: [] }, activeBoostCatalog: [] },
+        }),
+      } as unknown as Response)
+    );
+    await expect(getAgentJson(fetcher)).rejects.toThrow();
+  });
+  it("accepts valid shape with extra unknown fields (passthrough)", async () => {
+    const { _resetAgentJsonCacheForTests, getAgentJson } = await import("../src/agent-json.js");
+    _resetAgentJsonCacheForTests();
+    const fetcher = vi.fn(async () =>
+      ({
+        ok: true,
+        json: async () => ({
+          name: "Bakery",  // unknown field at top level
+          network: { chainId: 2741, extra: 1 },
+          contracts: {
+            bakery: "0xaaaa000000000000000000000000000000000000",
+            boostManager: "0xbbbb000000000000000000000000000000000000",
+            playerRegistry: "0xcccc000000000000000000000000000000000000",
+            clanRegistry: "0xdddd000000000000000000000000000000000000",
+          },
+          liveState: { currentSeasonId: 10, vrfFeeWei: "0", gameplayCaps: { bakeryTiers: [] }, activeBoostCatalog: [] },
+        }),
+      } as unknown as Response)
+    );
+    const result = await getAgentJson(fetcher);
+    expect(result.network.chainId).toBe(2741);
+  });
+});
