@@ -50,6 +50,9 @@ docker compose up -d --build
 docker compose logs -f bot
 ```
 
+Docker logs are capped at 5×10MB via compose (`json-file` driver,
+independent of the structured `data/events.jsonl` log on the bind mount).
+
 ## Dry-run mode
 
 To verify the bot can read chain state and that ABI assumptions match live
