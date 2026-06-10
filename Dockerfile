@@ -13,6 +13,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
 COPY config.json ./config.json
+COPY scripts ./scripts
 RUN mkdir -p /app/data && chown -R bot:bot /app
 USER bot
 CMD ["node", "dist/main.js"]
