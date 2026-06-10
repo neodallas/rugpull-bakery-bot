@@ -6,7 +6,7 @@
   "minEthReserve": "0.005",
   "maxGasPerDay": "0.01",
   "maxVrfPerDay": "0.001",
-  "maxBakesPerHour": 30,
+  "maxBakesPerHour": 0,
   "maxFailedTxConsecutive": 5,
   "telegram": {
     "chatId": "",

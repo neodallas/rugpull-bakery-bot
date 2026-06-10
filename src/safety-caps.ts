@@ -123,7 +123,7 @@ export function createSafetyCaps(
       if (state.vrfSpentWei + estVrfWei > cfg.maxVrfPerDayWei) {
         return { ok: false, reason: "daily VRF cap would be exceeded" };
       }
-      if (state.bakeCountThisHour >= cfg.maxBakesPerHour) {
+      if (cfg.maxBakesPerHour > 0 && state.bakeCountThisHour >= cfg.maxBakesPerHour) {
         return { ok: false, reason: "hourly bake cap reached" };
       }
       return { ok: true };
@@ -139,7 +139,7 @@ export function createSafetyCaps(
         if (state.gasSpentWei >= cfg.maxGasPerDayWei) {
           trip("daily gas cap exceeded");
         }
-        if (state.bakeCountThisHour > cfg.maxBakesPerHour) {
+        if (cfg.maxBakesPerHour > 0 && state.bakeCountThisHour > cfg.maxBakesPerHour) {
           trip("hourly bake anomaly");
         }
       } else if (!r.expected) {

@@ -11,7 +11,7 @@ const RawConfigSchema = z.object({
   minEthReserve: z.string(),
   maxGasPerDay: z.string(),
   maxVrfPerDay: z.string(),
-  maxBakesPerHour: z.number().int().positive(),
+  maxBakesPerHour: z.number().int().nonnegative(),
   maxFailedTxConsecutive: z.number().int().positive(),
   telegram: z.object({
     chatId: z.string(),
