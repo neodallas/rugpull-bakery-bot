@@ -1,7 +1,7 @@
 {
   "clanId": 1571,
   "minMultiplier": 2.0,
-  "pollIntervalMs": 5000,
+  "pollIntervalMs": 1500,
   "bakeCooldownBlocks": 5,
   "minEthReserve": "0.005",
   "maxGasPerDay": "0.2",
