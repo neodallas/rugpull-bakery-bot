@@ -1,9 +1,10 @@
 import { createPublicClient, http, type PublicClient } from "viem";
 import type { BoostCatalogEntry } from "./agent-json.js";
 import { getAgentJson } from "./agent-json.js";
-import { BOOST_MANAGER_READ_ABI, BAKERY_READ_ABI } from "./abis.js";
+import { BAKERY_READ_ABI } from "./abis.js";
 import { readSweeperCooldown, isSweeperFreeReady } from "./sweeper-cooldown.js";
-import type { Address, Config, Debuff, State } from "./types.js";
+import { fetchBakeryEffects, computeEffectiveMultiplierBps, type Buff } from "./bakery-effects.js";
+import type { Config, Debuff, State } from "./types.js";
 
 const ABSTRACT_CHAIN_ID = 2741;
 const DATA_DIR = "data";
@@ -59,39 +60,15 @@ export function createStateReader(cfg: Config): StateReader {
         publicClient.getBalance({ address: cfg.agwOwnerAddress }),
         publicClient.getBlockNumber(),
         publicClient.readContract({
-          address: agent.contracts.boostManager,
-          abi: BOOST_MANAGER_READ_ABI,
-          functionName: "getEffectiveMultiplier",
-          args: [BigInt(cfg.clanId)],
-        }),
-        publicClient.readContract({
-          address: agent.contracts.boostManager,
-          abi: BOOST_MANAGER_READ_ABI,
-          functionName: "getActiveDebuffs",
-          args: [BigInt(cfg.clanId)],
-        }),
-        publicClient.readContract({
-          address: agent.contracts.boostManager,
-          abi: BOOST_MANAGER_READ_ABI,
-          functionName: "getActiveBoosts",
-          args: [BigInt(cfg.clanId)],
-        }),
-        publicClient.readContract({
           address: agent.contracts.bakery,
           abi: BAKERY_READ_ABI,
           functionName: "lastBake",
           args: [cfg.agwOwnerAddress],
         }),
+        fetchBakeryEffects(cfg.clanId, agent.liveState.currentSeasonId),
       ]);
 
-      const labels = [
-        "balance",
-        "blockNumber",
-        "effectiveMultiplier",
-        "activeDebuffs",
-        "activeBoosts",
-        "lastBake",
-      ];
+      const labels = ["balance", "blockNumber", "lastBake", "bakeryEffects"];
       const failures: string[] = [];
       results.forEach((r, i) => {
         if (r.status === "rejected") failures.push(labels[i]!);
@@ -103,28 +80,21 @@ export function createStateReader(cfg: Config): StateReader {
         throw new PartialReadError(failures);
       }
 
-      const [ethWei, blockNumber, multiplier, rawRugs, rawBoosts, lastBakeBlockRaw] = results.map(
+      const [ethWei, blockNumber, lastBakeBlockRaw, effects] = results.map(
         (r) => (r as PromiseFulfilledResult<unknown>).value
       );
+      const effectsTyped = effects as { buffs: Buff[]; debuffs: Buff[] };
 
-      const activeRugs: Debuff[] = (rawRugs as Array<{
-        boostTypeId: bigint;
-        endTimeUnix: bigint;
-        severityBps: bigint;
-      }>).map((r) => ({
-        boostTypeId: Number(r.boostTypeId),
-        endTimeUnix: Number(r.endTimeUnix),
-        severityBps: Number(r.severityBps),
+      const multiplier = computeEffectiveMultiplierBps(effectsTyped.buffs);
+      const activeRugs: Debuff[] = effectsTyped.debuffs.map((d) => ({
+        boostTypeId: d.boostTypeId,
+        endTimeUnix: d.endTimeUnix,
+        severityBps: d.multiplierBps,
       }));
-
-      const activeBoosts: Debuff[] = (rawBoosts as Array<{
-        boostTypeId: bigint;
-        endTimeUnix: bigint;
-        severityBps: bigint;
-      }>).map((b) => ({
-        boostTypeId: Number(b.boostTypeId),
-        endTimeUnix: Number(b.endTimeUnix),
-        severityBps: Number(b.severityBps),
+      const activeBoosts: Debuff[] = effectsTyped.buffs.map((b) => ({
+        boostTypeId: b.boostTypeId,
+        endTimeUnix: b.endTimeUnix,
+        severityBps: b.multiplierBps,
       }));
 
       // Skill is reported as "None" because the bot's session key has no
@@ -147,7 +117,7 @@ export function createStateReader(cfg: Config): StateReader {
         ethWei: ethWei as bigint,
         blockNumber: blockNumber as bigint,
         lastBakeBlock: lastBakeBlockRaw as bigint,
-        effectiveMultiplierBps: Number(multiplier),
+        effectiveMultiplierBps: multiplier,
         activeRugs,
         activeBoosts,
         playerSkill,
