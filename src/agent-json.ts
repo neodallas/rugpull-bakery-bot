@@ -5,19 +5,26 @@ const AddressSchema = z
   .regex(/^0x[0-9a-fA-F]{40}$/, "must be 0x + 40 hex")
   .transform((v) => v as `0x${string}`);
 
+// Defensive: tolerate null for boolean/number fields that the live API
+// occasionally returns as null. We coerce to safe defaults so a single
+// malformed catalog entry doesn't take down the whole agent.json parse
+// and force a stale-cache fallback.
+const boolOrNull = z.preprocess((v) => (v === null || v === undefined ? false : v), z.boolean());
+const intOrNull = z.preprocess((v) => (v === null || v === undefined ? 0 : v), z.number().int());
+
 const BoostCatalogEntrySchema = z.object({
   id: z.string(),
   name: z.string(),
   type: z.string(),
-  isRandomEvent: z.boolean(),
-  isCountermeasure: z.boolean(),
+  isRandomEvent: boolOrNull,
+  isCountermeasure: boolOrNull,
 }).passthrough();
 
 const BakeryTierSchema = z.object({
-  tierId: z.number().int(),
+  tierId: intOrNull,
   name: z.string(),
-  enabled: z.boolean(),
-  bakeCooldownBlocks: z.number().int().min(0),
+  enabled: boolOrNull,
+  bakeCooldownBlocks: intOrNull.pipe(z.number().int().min(0)),
 }).passthrough();
 
 const AgentJsonSchema = z.object({
