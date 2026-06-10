@@ -66,12 +66,15 @@ describe("safety-caps", () => {
     expect(caps.snapshot().consecutiveFailedTx).toBe(0);
   });
 
-  it("resets daily counters on UTC date rollover", () => {
+  it("preserves lifetime gas spend across UTC rollover; resets only daily bake counters", () => {
     const caps = createSafetyCaps(path, cfg);
     caps.recordTxResult({ ok: true, txHash: "0x1", gasUsedWei: 5n, vrfPaidWei: 0n });
+    expect(caps.snapshot().gasSpentWei).toBe(5n);
+    expect(caps.snapshot().bakeCountToday).toBe(1);
     vi.setSystemTime(new Date("2026-06-06T00:00:01Z"));
     const reloaded = createSafetyCaps(path, cfg);
-    expect(reloaded.snapshot().gasSpentWei).toBe(0n);
+    expect(reloaded.snapshot().gasSpentWei).toBe(5n);
+    expect(reloaded.snapshot().bakeCountToday).toBe(0);
     expect(reloaded.snapshot().dateUtc).toBe("2026-06-06");
   });
 

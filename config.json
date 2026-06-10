@@ -4,7 +4,7 @@
   "pollIntervalMs": 5000,
   "bakeCooldownBlocks": 5,
   "minEthReserve": "0.005",
-  "maxGasPerDay": "0.01",
+  "maxGasPerDay": "0.2",
   "maxVrfPerDay": "0.001",
   "maxBakesPerHour": 0,
   "maxFailedTxConsecutive": 5,

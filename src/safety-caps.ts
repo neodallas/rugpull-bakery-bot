@@ -77,7 +77,14 @@ export function createSafetyCaps(
   function rolloverIfNeeded(): void {
     const today = todayUtc();
     if (state.dateUtc !== today) {
-      state = freshState();
+      // Reset only daily activity counters. Gas/VRF spend are lifetime
+      // (config's maxGasPerDay / maxVrfPerDay are interpreted as lifetime
+      // budgets, not daily). Same for kill-switch state — once tripped
+      // by exceeding the lifetime gas budget it should NOT auto-reset.
+      state.dateUtc = today;
+      state.bakeCountToday = 0;
+      state.bakeCountThisHour = 0;
+      state.hourBucket = hourBucket();
       persist(path, state);
       return;
     }
@@ -118,10 +125,10 @@ export function createSafetyCaps(
     preflight: (estGasWei, estVrfWei) => {
       rolloverIfNeeded();
       if (state.gasSpentWei + estGasWei > cfg.maxGasPerDayWei) {
-        return { ok: false, reason: "daily gas cap would be exceeded" };
+        return { ok: false, reason: "lifetime gas budget would be exceeded" };
       }
       if (state.vrfSpentWei + estVrfWei > cfg.maxVrfPerDayWei) {
-        return { ok: false, reason: "daily VRF cap would be exceeded" };
+        return { ok: false, reason: "lifetime VRF budget would be exceeded" };
       }
       if (cfg.maxBakesPerHour > 0 && state.bakeCountThisHour >= cfg.maxBakesPerHour) {
         return { ok: false, reason: "hourly bake cap reached" };
@@ -137,7 +144,7 @@ export function createSafetyCaps(
         state.bakeCountThisHour += 1;
         state.consecutiveFailedTx = 0;
         if (state.gasSpentWei >= cfg.maxGasPerDayWei) {
-          trip("daily gas cap exceeded");
+          trip("lifetime gas budget exceeded");
         }
         if (cfg.maxBakesPerHour > 0 && state.bakeCountThisHour > cfg.maxBakesPerHour) {
           trip("hourly bake anomaly");
