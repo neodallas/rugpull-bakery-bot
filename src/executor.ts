@@ -34,6 +34,10 @@ const INVALID_SESSION_HINTS = [
   "Unauthorized",
   "InvalidSignature",
   "SessionKeyValidator",
+  // Observed live on Abstract mainnet when AGW reports the session is no
+  // longer accepted (e.g. revoked by site/SDK auto-cleanup):
+  "Session key validation failed",
+  "Account validation error",
 ];
 
 export function isInvalidSessionError(message: string): boolean {
