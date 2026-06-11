@@ -11,6 +11,7 @@ import { createStateReader, assertChainId, PartialReadError } from "./state-read
 import { createSessionSigner } from "./session-key.js";
 import { createExecutor, isInvalidSessionError } from "./executor.js";
 import { createTelegramNotifier } from "./telegram-notifier.js";
+import { startTelegramCommands, stopTelegramCommands } from "./telegram-commands.js";
 import { recordSweeperCleanup } from "./sweeper-cooldown.js";
 import { readPending, clearPending } from "./pending-tx.js";
 import { createExpiryWarner, createDailySummaryTracker, createHeartbeat } from "./main-helpers.js";
@@ -21,8 +22,8 @@ const SAFETY_PATH = join(DATA_DIR, "safety.json");
 const LOG_PATH = join(DATA_DIR, "events.jsonl");
 
 let shouldStop = false;
-process.on("SIGTERM", () => { shouldStop = true; });
-process.on("SIGINT", () => { shouldStop = true; });
+process.on("SIGTERM", () => { shouldStop = true; stopTelegramCommands(); });
+process.on("SIGINT", () => { shouldStop = true; stopTelegramCommands(); });
 process.on("unhandledRejection", (err) => {
   console.error("unhandledRejection", err);
   process.exit(1);
@@ -80,6 +81,11 @@ async function main(): Promise<void> {
     ? `Rugpull bot started in DRY-RUN mode (no tx will be sent), clan ${cfg.clanId}`
     : `Rugpull bot started, clan ${cfg.clanId}`;
   await tg.send(startupMsg);
+
+  // Start Telegram command polling in background (read-only commands:
+  // /status, /balance, /log). Fire-and-forget — internal try/catch never
+  // crashes the bot. Stopped via SIGTERM/SIGINT through shouldStop flag.
+  void startTelegramCommands(cfg, reader.publicClient, DATA_DIR);
 
   if (!dryRun) {
     const pending = readPending(DATA_DIR);
