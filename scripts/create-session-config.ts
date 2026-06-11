@@ -8,8 +8,11 @@ import {
 } from "@abstract-foundation/agw-client/sessions";
 
 const BAKERY_ADDRESS: Address = "0x30b49389D5271712b7e539a690B2F7b92afA3c31";
-const BOOST_MANAGER_ADDRESS: Address =
-  "0x4F97015601863C256892e0a5e2710b48E149948C";
+// NOTE: BoostManager was intentionally removed from callPolicies on
+// 2026-06-11 because it is not registered in SessionKeyPolicyRegistry on
+// Abstract mainnet. Including it causes the SDK / on-chain validator to
+// reject the session every time (signed-hash mismatch vs registered
+// policy). Cleanup-via-bot is therefore disabled — use site UI instead.
 const SESSION_DURATION_DAYS = 30;
 const SESSION_FEE_LIMIT_ETH = "0.05"; // Lifetime fee cap for this session
 
@@ -20,9 +23,6 @@ function main() {
 
   // 2. Compute selectors via viem — never hardcoded so a sig change is one edit away
   const bakeSelector = toFunctionSelector("function bake()") as Hex;
-  const purchaseBoostSelector = toFunctionSelector(
-    "function purchaseBoost(uint256 clanId, uint256 boostTypeId)"
-  ) as Hex;
 
   // 3. Compute expiresAt
   const now = Math.floor(Date.now() / 1000);
@@ -43,13 +43,6 @@ function main() {
         selector: bakeSelector,
         valueLimit: LimitUnlimited,
         maxValuePerUse: 0n,
-        constraints: [],
-      },
-      {
-        target: BOOST_MANAGER_ADDRESS,
-        selector: purchaseBoostSelector,
-        valueLimit: LimitUnlimited,
-        maxValuePerUse: parseEther("0.001"), // single tx fee cap; covers VRF fee
         constraints: [],
       },
     ],
