@@ -9,7 +9,7 @@
   "maxBakesPerHour": 0,
   "maxFailedTxConsecutive": 5,
   "telegram": {
-    "chatId": "",
+    "chatId": "8884277769",
     "tokenEnv": "TG_BOT_TOKEN"
   }
 }
